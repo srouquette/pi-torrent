@@ -1,0 +1,83 @@
+version: "3"
+services:
+  transmission:
+    image: lscr.io/linuxserver/transmission
+    env_file:
+      - creds.env
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Paris
+#      - TRANSMISSION_WEB_HOME=/ui/transmissionic
+      - USER=transmission
+      # - PASS=transmission
+      - WHITELIST=127.0.0.1,192.168.1.*,192.168.2.*,172.18.0.*,172.20.0.*
+      # - HOST_WHITELIST=flexget
+    volumes:
+      - ./config/transmission:/config
+      - ./Elements:/Elements
+      # - <path to watch folder>:/watch
+    ports:
+      - 9091:9091
+      - 51413:51413
+      - 51413:51413/udp
+    restart: unless-stopped
+
+  flexget:
+    image: wiserain/flexget
+    env_file:
+      - creds.env
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Paris
+      # - FG_WEBUI_PASSWD=password
+    volumes:
+      - ./config/flexget:/config
+      - ./Elements:/Elements
+    ports:
+      - 5050:5050
+    restart: unless-stopped
+
+  # emby:
+  #   image: emby/embyserver_arm32v7
+  #   environment:
+  #     - UID=1000 # The UID to run emby as (default: 2)
+  #     - GID=100 # The GID to run emby as (default 2)
+  #     - GIDLIST=100 # A comma-separated list of additional GIDs to run emby as (default: 2)
+  #   volumes:
+  #     - /opt/vc/lib:/opt/vc/lib
+  #     - ./config/emby:/config # Configuration directory
+  #     - ./Elements/anime:/mnt/anime
+  #     - ./Elements/series:/mnt/series
+  #     - ./Elements/movies:/mnt/movies
+  #     - ./Elements/music:/mnt/music
+  #   ports:
+  #     - 8096:8096 # HTTP port
+  #     - 8920:8920 # HTTPS port
+  #   devices:
+  #     - /dev/dri:/dev/dri # VAAPI/NVDEC/NVENC render nodes
+  #     - /dev/vchiq:/dev/vchiq # MMAL/OMX on Raspberry Pi
+  #     - /dev/video10:/dev/video10
+  #     - /dev/video11:/dev/video11
+  #     - /dev/video12:/dev/video12
+  #     - /dev/video13:/dev/video13
+  #     - /dev/video14:/dev/video14
+  #     - /dev/video15:/dev/video15
+  #     - /dev/video16:/dev/video16
+  #   restart: unless-stopped
+
+  # kodi:
+  #   image: lsioarmhf/kodi-headless
+  #   environment:
+  #     - PUID=1000
+  #     - PGID=1000
+  #     - TZ=Europe/Paris
+  #   volumes:
+  #     - ./config/kodi:/config/.kodi
+  #     - ./Elements:/Elements
+  #   ports:
+  #     - 8080:8080
+  #     - 9090:9090
+  #     - 9777:9777/udp
+  #   restart: unless-stopped

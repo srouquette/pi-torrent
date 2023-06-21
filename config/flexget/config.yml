@@ -1,0 +1,289 @@
+# https://github.com/zilexa/Flexget-the-lazy-couch-experience/
+# https://github.com/effemmeffe/flexget
+# https://github.com/Jonybat/flexget_config
+variables: secrets.yml
+
+schedules:
+  - tasks: ['clean-*', 'update-*', 'download-subtitles']
+    schedule:
+      hour: "*/4"
+  - tasks: ['*-rss']
+    schedule:
+      minute: "*/30"
+  - tasks: ['move-*']
+    schedule:
+      minute: "*/10"
+
+web_server:
+  bind: 0.0.0.0
+  port: 5050
+  web_ui: yes
+
+templates:
+  global:
+    no_entries_ok: yes
+    pathscrub: windows
+    free_space:
+      path: "{? folder.root ?}"
+      space: 5000
+
+  transmission-anchors:
+    _transmission-settings: &transmission-settings
+      host: "{? transmission.host ?}"
+      port: 9091
+      username: "{? transmission.user ?}"
+      password: "{? transmission.pass ?}"
+
+  transmission-series:
+    transmission:
+      <<: *transmission-settings
+      main_file_only: yes
+      include_subs: yes
+      rename_like_files: yes
+      content_filename: "{{tvdb_series_name|default(series_name)|pathscrub}} - {{tvdb_ep_id|default(series_id)}}{% if tvdb_ep_name|default(False) %} - {{tvdb_ep_name|pathscrub}}{% endif %}{% if quality|default(False) %} - [{{quality}}]{% endif %}"
+      path: "{? folder.root ?}{? folder.downseries ?}{{tvdb_series_name|default(series_name)|pathscrub}}/"
+
+  transmission-movies:
+    transmission:
+      <<: *transmission-settings
+      main_file_only: yes
+      include_subs: yes
+      rename_like_files: yes
+      content_filename: "{{trakt_movie_name|default(movie_name)|pathscrub}}{% if movie_year|default(False) %}({trakt_movie_year|default(movie_year)}}{% endif %}{% if quality|default(False) %} - [{{quality}}]{% endif %}"
+      path: "{? folder.root ?}{? folder.downmovies ?}{{movie_name|pathscrub}}"
+
+  transmission-anime-series:
+    transmission:
+      <<: *transmission-settings
+      main_file_only: yes
+      content_filename: "{{series_name}} - ep{{series_id}} - [{{quality}}]"
+      path: "{? folder.root ?}{? folder.downanime ?}{{series_name|pathscrub}}/"
+
+  disable-seen-retry:
+    disable:
+      - seen
+      - seen_info_hash
+      - retry_failed
+
+  series-metainfo:
+    metainfo_series: yes
+    thetvdb_lookup: yes
+    require_field: series_name
+
+  anime-metainfo:
+    parsing:
+      series: guessit
+
+  movies-metainfo:
+    metainfo_movie: yes
+#    tmdb_lookup: yes
+    trakt_lookup:
+      account: "{? trakt.accout ?}"
+      username: "{? trakt.user ?}"
+    parsing:
+      movie: guessit
+
+  reject:
+    regexp:
+      reject:
+        - \b(s|d)ub(s|bed|lado|titulado)?\b
+        - \bhc\b
+        - \bdual\b
+        - \b3d\b
+        - \bita(lian)?\b
+        - \bspa(nish)?\b
+        - \bger(man)?\b
+        - \bcastellano\b
+        - \brus(sian)?\b
+        - \bh265\b
+        - \b10bit\b
+        - \bsample\b
+    #content_size:
+    #  min: 150
+    content_filter:
+      reject:
+        - '*sample*'
+        - '*.rar'
+        - '*.zip'
+
+  subtitles-list-add:
+    list_add:
+      - subtitle_list:
+          list: subtitles
+          languages: ['en']
+          path: "{{location}}"
+          remove_after: 7 days
+
+tasks:
+  download-series-rss: # task
+    priority: 40
+    all_series: yes
+    template:
+      - series-metainfo
+      - reject
+      - transmission-series
+    inputs:
+      - rss: {? rss.series ?}
+
+  download-anime-rss: # task
+    priority: 50
+    all_series: yes
+    template:
+      - anime-metainfo
+      - reject
+      - transmission-anime-series
+    inputs:
+      - rss: {? rss.anime ?}
+
+  move-series: # task
+    priority: 120
+    template:
+      - disable-seen-retry
+      - series-metainfo
+      - subtitles-list-add
+    filesystem:
+      path:
+        - "{? folder.root ?}{? folder.downseries ?}"
+      recursive: yes
+      retrieve: files
+      regexp: '.*\.(avi|mkv|mp4|m4v)$'
+    accept_all: yes
+    move:
+      to: "{? folder.root ?}{? folder.series ?}{{tvdb_series_name|default(series_name)|pathscrub}}/S{{tvdb_season|pad(2)|default(series_season|pad(2))}}/"
+      rename: "{{tvdb_series_name|default(series_name)|pathscrub}} - {{tvdb_ep_id|default(series_id)}}{% if tvdb_ep_name|default(False) %} - {{tvdb_ep_name|pathscrub}}{% endif %}{% if quality|default(False) %} - [{{quality}}]{% endif %}"
+      along:
+        extensions:
+          - srt
+          - sub
+        subdirs:
+          - Subs
+      clean_source: 50
+    regexp:
+      reject:
+        - .*(rarbg|RARBG).mp4
+        - .*(rarbg|RARBG).(com|COM)
+    kodi_library:
+      action: scan
+      category: video
+      url: "{? kodi.host ?}"
+    exec:
+      on_exit:
+        phase: find "{? folder.root ?}{? folder.downseries ?}"* -type d -empty -delete > /dev/null 2>&1
+
+  move-anime: # task
+    priority: 125
+    template:
+      - disable-seen-retry
+      - anime-metainfo
+    filesystem:
+      path:
+        - "{? folder.root ?}{? folder.downanime ?}"
+      recursive: yes
+      retrieve: files
+      regexp: '.*\.(avi|mkv|mp4|m4v)$'
+    metainfo_series: yes
+    accept_all: yes
+    move:
+      to: "{? folder.root ?}{? folder.anime ?}{{series_name|default(title)|pathscrub}}/"
+      clean_source: 50
+    kodi_library:
+      action: scan
+      category: video
+      url: "{? kodi.host ?}"
+    exec:
+      on_exit:
+        phase: find "{? folder.root ?}{? folder.downanime ?}"* -type d -empty -delete > /dev/null 2>&1
+
+  move-movies: # task
+    priority: 130
+    template:
+      - disable-seen-retry
+      - movies-metainfo
+      - subtitles-list-add
+    filesystem:
+      path:
+        - "{? folder.root ?}{? folder.downmovies ?}"
+      recursive: yes
+      retrieve: files
+      regexp: '.*\.(avi|mkv|mp4|m4v)$'
+    accept_all: yes
+    regexp:
+      reject:
+        - \btrailer\b
+        - \bsample\b
+        - .*(rarbg|RARBG).mp4
+        - .*(rarbg|RARBG).(com|COM)
+    move:
+      to: "{? folder.root ?}{? folder.movies ?}{{trakt_movie_name|default(movie_name)|pathscrub}} ({{trakt_movie_year|default(movie_year)}})"
+      rename: "{{trakt_movie_name|default(movie_name)|pathscrub}} ({{trakt_movie_year|default(movie_year)}}){% if quality|default(False) %} - [{{quality}}]{% endif %}"
+      along:
+        extensions:
+          - srt
+          - sub
+        subdirs:
+          - Subs
+      clean_source: 100
+    kodi_library:
+      action: scan
+      category: video
+      url: "{? kodi.host ?}"
+    exec:
+      on_exit:
+        phase: find "{? folder.root ?}{? folder.downmovies ?}"* -type d -empty -delete > /dev/null 2>&1
+
+  download-subtitles: # task
+    priority: 140
+    template:
+      - disable-seen-retry
+    subtitle_list:
+      list: subtitles
+    list_match:
+      from:
+        - subtitle_list:
+            list: subtitles
+    subliminal:
+      exact_match: yes
+      languages:
+        - en
+      authentication:
+        addic7ed:
+          username: "{? addic7ed.user ?}"
+          password: "{? addic7ed.password ?}"
+        opensubtitles:
+          username: "{? opensubtitles.user ?}"
+          password: "{? opensubtitles.passsword ?}"
+
+  clean-transmission: # task
+    priority: 150
+    template:
+      - disable-seen-retry
+    from_transmission:
+      <<: *transmission-settings
+      only_complete: yes
+    if:
+      - transmission_progress == 100: accept
+    transmission:
+      <<: *transmission-settings
+      action: remove
+
+  update-series-list: # task
+    priority: 160
+    template:
+      - disable-seen-retry
+      - series-metainfo
+    filesystem:
+      path: "{? folder.root ?}{? folder.series ?}"
+      retrieve: dirs
+    manipulate:
+      - title:
+          replace:
+            regexp: '$'
+            format: ' S01E01'
+    accept_all: yes
+    if:
+      - tvdb_status == 'Ended': reject
+    list_add:
+      - trakt_list:
+          account: "{? trakt.account ?}"
+          list: "{? trakt.series ?}"
+          type: shows
